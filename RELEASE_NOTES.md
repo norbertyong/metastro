@@ -1,5 +1,10 @@
 # Notes de version
 
+## v1.1.1
+
+- L'archive `metastro-v1.1.1.zip` de la release contient désormais tout le code du dépôt : site, tests, `package.json`, notes de version et workflows. Pour héberger le site, il suffit d'y prendre `index.html` et le dossier `assets/`.
+- Le site lui-même est inchangé depuis la v1.1.0.
+
 ## v1.1.0
 
 Metastro dit désormais si la prévision est fiable, et quoi observer.

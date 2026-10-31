@@ -48,13 +48,11 @@ jobs:
           PY
       - name: Tests
         run: npm test
-      - name: Construire le paquet du site
+      - name: Construire l'archive du code
         shell: bash
         run: |
-          stage="$RUNNER_TEMP/metastro"
-          mkdir -p "$stage"
-          cp -r index.html assets README.md "$stage/"
-          (cd "$RUNNER_TEMP" && zip -qr "metastro-$RELEASE_TAG.zip" metastro)
+          # Tout le code suivi par git au commit publié : site, tests, notes et workflows.
+          git archive --format=zip --prefix=metastro/ -o "$RUNNER_TEMP/metastro-$RELEASE_TAG.zip" HEAD
           (cd "$RUNNER_TEMP" && sha256sum "metastro-$RELEASE_TAG.zip" > "metastro-$RELEASE_TAG.zip.sha256")
       - name: Publier la release GitHub
         shell: bash

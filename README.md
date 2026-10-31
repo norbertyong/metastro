@@ -48,7 +48,7 @@ Les tests vérifient les éphémérides contre des événements connus : équino
 
 ## Releases
 
-Chaque tag `vX.Y.Z` poussé déclenche le workflow `Publication de release`. Il vérifie que le tag correspond à la version de `package.json` et lance les tests. Il publie ensuite la release GitHub avec les notes de `RELEASE_NOTES.md` et le paquet `metastro-vX.Y.Z.zip`, prêt à déposer sur un hébergement statique.
+Chaque tag `vX.Y.Z` poussé déclenche le workflow `Publication de release`. Il vérifie que le tag correspond à la version de `package.json` et lance les tests. Il publie ensuite la release GitHub avec les notes de `RELEASE_NOTES.md` et l'archive `metastro-vX.Y.Z.zip`. Celle-ci contient tout le code du dépôt ; pour héberger le site, il suffit d'y prendre `index.html` et le dossier `assets/`.
 
 ```bash
 git tag -a v1.0.0 -m "Metastro v1.0.0"

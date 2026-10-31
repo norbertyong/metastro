@@ -1,6 +1,6 @@
 {
   "name": "metastro",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Météo astro : prévisions d'observation du ciel nuit par nuit.",
   "scripts": {
