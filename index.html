@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metastro — Météo astro</title>
+  <meta name="description" content="Metastro : prévisions météo pour l'astronomie. Couverture nuageuse, seeing, transparence, phase de la Lune et meilleures fenêtres d'observation, nuit par nuit.">
+  <meta name="theme-color" content="#070b1a">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <canvas id="sky" aria-hidden="true"></canvas>
+
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Metastro, accueil">
+      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+        <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 5a11 11 0 0 1 0 22a7 11 0 0 0 0-22z" fill="currentColor"/>
+        <circle cx="27" cy="6" r="1.6" fill="currentColor"/>
+        <circle cx="5" cy="27" r="1.1" fill="currentColor"/>
+      </svg>
+      <span>Metastro</span>
+    </a>
+
+    <form class="search" role="search" autocomplete="off" onsubmit="return false">
+      <label class="visually-hidden" for="search">Rechercher un lieu</label>
+      <input id="search" type="search" placeholder="Rechercher une ville, un site d'observation…"
+             role="combobox" aria-expanded="false" aria-controls="suggestions" aria-autocomplete="list">
+      <ul id="suggestions" class="suggestions" role="listbox" hidden></ul>
+    </form>
+
+    <div class="actions">
+      <button id="locate" class="btn" type="button" title="Utiliser ma position">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Ma position</span>
+      </button>
+      <button id="nightMode" class="btn" type="button" aria-pressed="false" title="Mode vision nocturne (rouge)">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="currentColor"/></svg>
+        <span>Vision nocturne</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <section class="hero" id="hero" hidden>
+      <div class="place">
+        <p class="eyebrow" id="nightName">Cette nuit</p>
+        <h1 id="placeName"></h1>
+        <p class="muted" id="placeDetail"></p>
+      </div>
+
+      <article class="card verdict">
+        <div class="ring" id="scoreRing"></div>
+        <div class="verdict-text">
+          <h2 id="verdictLabel"></h2>
+          <p id="verdictSummary" class="muted"></p>
+          <p id="bestWindow" class="best"></p>
+        </div>
+      </article>
+
+      <article class="card moon-card">
+        <div id="moonVisual" class="moon-visual"></div>
+        <div>
+          <h3 id="moonName"></h3>
+          <p class="big" id="moonFraction"></p>
+          <dl class="facts" id="moonFacts"></dl>
+        </div>
+      </article>
+
+      <article class="card sun-card">
+        <h3>Éphémérides</h3>
+        <dl class="facts" id="sunFacts"></dl>
+      </article>
+    </section>
+
+    <section class="block" id="nightsBlock" hidden>
+      <div class="block-head">
+        <h2>Les prochaines nuits</h2>
+        <p class="muted">Note moyenne pendant la nuit (Soleil sous −12°). Cliquez sur une nuit pour le détail.</p>
+      </div>
+      <div class="nights" id="nights"></div>
+    </section>
+
+    <section class="block" id="detailBlock" hidden>
+      <div class="block-head">
+        <h2 id="detailTitle">Heure par heure</h2>
+        <p class="muted">Faites défiler horizontalement sur mobile.</p>
+      </div>
+      <div class="card timeline-card">
+        <div id="timeline"></div>
+      </div>
+      <div class="table-wrap card">
+        <table id="hourly" class="hourly"></table>
+      </div>
+      <ul class="legend" aria-label="Légende des couleurs">
+        <li><span class="sw lvl-5"></span>Excellent</li>
+        <li><span class="sw lvl-4"></span>Bon</li>
+        <li><span class="sw lvl-3"></span>Moyen</li>
+        <li><span class="sw lvl-2"></span>Médiocre</li>
+        <li><span class="sw lvl-1"></span>Mauvais</li>
+      </ul>
+    </section>
+
+    <section class="block guide" id="guide">
+      <div class="block-head">
+        <h2>Comment lire Metastro</h2>
+      </div>
+      <div class="guide-grid">
+        <article class="card">
+          <h3>Note d'observation</h3>
+          <p>Synthèse de 0 à 100 : la couverture nuageuse pèse le plus, puis l'obscurité du ciel (Soleil et Lune), la transparence, le seeing, le vent et le risque de précipitations.</p>
+        </article>
+        <article class="card">
+          <h3>Nuages bas, moyens, hauts</h3>
+          <p>Les nuages bas et moyens bouchent le ciel. Les cirrus (nuages hauts) laissent passer les étoiles brillantes mais voilent le ciel profond.</p>
+        </article>
+        <article class="card">
+          <h3>Seeing</h3>
+          <p>Stabilité de l'atmosphère, de 1 à 5. Estimée à partir du courant-jet (vent à ~10 km d'altitude) et des rafales. Crucial pour les planètes et la Lune en fort grossissement.</p>
+        </article>
+        <article class="card">
+          <h3>Transparence</h3>
+          <p>Pureté du ciel, de 1 à 5. Dépend de l'humidité, de la visibilité et du voile de cirrus. Crucial pour les galaxies et nébuleuses.</p>
+        </article>
+        <article class="card">
+          <h3>Obscurité</h3>
+          <p>Nuit astronomique quand le Soleil est sous −18°. Une Lune levée et bien éclairée illumine le ciel et noie les objets faibles.</p>
+        </article>
+        <article class="card">
+          <h3>Rosée</h3>
+          <p>Quand l'écart entre température et point de rosée passe sous 2 °C, la buée menace les optiques : prévoyez une résistance chauffante.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Données météo : <a href="https://open-meteo.com/" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Éphémérides du Soleil et de la Lune calculées dans votre navigateur.</p>
+    <p class="muted">Seeing et transparence sont des estimations : comparez toujours avec le ciel réel.</p>
+  </footer>
+
+  <script src="assets/js/astro.js"></script>
+  <script src="assets/js/forecast.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
