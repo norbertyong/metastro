@@ -432,7 +432,7 @@
       render();
     } catch (err) {
       if (request !== state.request) return;
-      setStatus(`Impossible de charger les prévisions : ${escapeHtml(err.message)}. <button class="btn" id="retry" type="button">Réessayer</button>`, true);
+      setStatus(`Impossible de charger les prévisions : ${escapeHtml(err.message.replace(/\.+$/, ''))}. <button class="btn" id="retry" type="button">Réessayer</button>`, true);
       $('retry').addEventListener('click', () => loadPlace(place));
     }
   }
