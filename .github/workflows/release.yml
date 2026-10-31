@@ -1,0 +1,71 @@
+name: Publication de release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag existant à publier (ex. v1.0.0)'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Vérifier la version et extraire les notes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+              raise SystemExit('Tag de version invalide')
+          if json.loads(Path('package.json').read_text())['version'] != tag[1:]:
+              raise SystemExit('Le tag ne correspond pas à la version de package.json')
+          text = Path('RELEASE_NOTES.md').read_text()
+          sections = re.split(r'^## ', text, flags=re.M)
+          section = next((s for s in sections if re.match(re.escape(tag) + r'(?:\s|$)', s)), None)
+          if not section or '\n' not in section:
+              raise SystemExit('Notes de version introuvables')
+          notes = section.split('\n', 1)[1].strip()
+          if not notes:
+              raise SystemExit('Notes de version vides')
+          Path(os.environ['RUNNER_TEMP'], 'release-notes.md').write_text(notes + '\n')
+          PY
+      - name: Tests
+        run: npm test
+      - name: Construire le paquet du site
+        shell: bash
+        run: |
+          stage="$RUNNER_TEMP/metastro"
+          mkdir -p "$stage"
+          cp -r index.html assets README.md "$stage/"
+          (cd "$RUNNER_TEMP" && zip -qr "metastro-$RELEASE_TAG.zip" metastro)
+          (cd "$RUNNER_TEMP" && sha256sum "metastro-$RELEASE_TAG.zip" > "metastro-$RELEASE_TAG.zip.sha256")
+      - name: Publier la release GitHub
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "La release existe déjà ; aucun remplacement."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag \
+            --title "Metastro $RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "$RUNNER_TEMP/metastro-$RELEASE_TAG.zip" \
+            "$RUNNER_TEMP/metastro-$RELEASE_TAG.zip.sha256"

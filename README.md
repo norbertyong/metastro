@@ -42,6 +42,15 @@ npm test           # Node.js 18 ou plus récent
 
 Les tests vérifient les éphémérides contre des valeurs connues (équinoxe 2024 à Paris, phases d'avril 2024). Ils couvrent aussi les indices et le découpage des prévisions en nuits.
 
+## Releases
+
+Chaque tag `vX.Y.Z` poussé déclenche le workflow `Publication de release`. Il vérifie que le tag correspond à la version de `package.json` et lance les tests. Il publie ensuite la release GitHub avec les notes de `RELEASE_NOTES.md` et le paquet `metastro-vX.Y.Z.zip`, prêt à déposer sur un hébergement statique.
+
+```bash
+git tag -a v1.0.0 -m "Metastro v1.0.0"
+git push origin v1.0.0
+```
+
 ## Publier avec GitHub Pages
 
 Dans **Settings → Pages**, choisissez **Deploy from a branch**, puis la branche `main` et le dossier `/ (root)`. Le site est entièrement statique.
@@ -57,4 +66,6 @@ assets/
   js/app.js        interface
   favicon.svg
 tests/metastro.test.js
+RELEASE_NOTES.md
+.github/workflows/release.yml
 ```
