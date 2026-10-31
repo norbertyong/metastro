@@ -1,5 +1,15 @@
 # Notes de version
 
+## v1.1.0
+
+Metastro dit désormais si la prévision est fiable, et quoi observer.
+
+- **Fiabilité de la prévision.** La nébulosité prévue par quatre modèles (ECMWF, ICON, GFS, Météo-France) est comparée. Chaque nuit reçoit un indice élevé, moyen ou faible selon l'écart entre modèles. Le détail par modèle apparaît sous la note, et l'écart heure par heure dans le tableau. Si cette comparaison échoue, les prévisions s'affichent quand même.
+- **Planètes.** De Mercure à Neptune : fenêtres de visibilité de la nuit, heure et hauteur du meilleur moment, direction et magnitude. Les positions sont calculées dans le navigateur à partir des éléments orbitaux du JPL.
+- **Ciel profond.** Environ 70 objets (Messier, grands NGC, Nuages de Magellan, étoiles doubles célèbres) sont classés pour la nuit choisie. Le classement tient compte de la hauteur, de l'éclat, des nuages, de la Lune et de la transparence. On peut filtrer par type, et les objets que la Lune rend difficiles sont signalés.
+- **Cœur de la Voie lactée.** Fenêtre où le centre galactique dépasse 10° en pleine nuit astronomique, avec la durée sans Lune.
+- Un refus de l'API (quota dépassé, par exemple) affiche son vrai motif et n'est plus retenté inutilement.
+
 ## v1.0.0
 
 Première version de Metastro, site statique de météo astro.

@@ -206,6 +206,110 @@
     return null;
   }
 
+  /** Hauteur et azimut (degrés) d'un astre de coordonnées équatoriales données en degrés. */
+  function horizontalPosition(ms, raDeg, decDeg, lat, lon) {
+    const d = toDays(ms);
+    const phi = rad * lat;
+    const dec = rad * decDeg;
+    const H = siderealTime(d, rad * -lon) - rad * raDeg;
+    return {
+      altitude: altitude(H, phi, dec) / rad,
+      azimuth: (azimuth(H, phi, dec) / rad + 180) % 360,
+    };
+  }
+
+  /*
+   * Éléments képlériens moyens (J2000) et leurs variations par siècle, d'après
+   * E. M. Standish, « Keplerian Elements for Approximate Positions of the Major
+   * Planets » (JPL), valables de 1800 à 2050 :
+   * [a (UA), e, I (°), L (°), longitude du périhélie (°), longitude du nœud (°)].
+   */
+  const ELEMENTS = {
+    mercury: [[0.38709927, 0.20563593, 7.00497902, 252.2503235, 77.45779628, 48.33076593],
+      [0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081]],
+    venus: [[0.72333566, 0.00677672, 3.39467605, 181.9790995, 131.60246718, 76.67984255],
+      [0.0000039, -0.00004107, -0.0007889, 58517.81538729, 0.00268329, -0.27769418]],
+    earth: [[1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0],
+      [0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0]],
+    mars: [[1.52371034, 0.0933941, 1.84969142, -4.55343205, -23.94362959, 49.55953891],
+      [0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343]],
+    jupiter: [[5.202887, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909],
+      [-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106]],
+    saturn: [[9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448],
+      [-0.0012506, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794]],
+    uranus: [[19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.9542763, 74.01692503],
+      [-0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589]],
+    neptune: [[30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227, 131.78422574],
+      [0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.00508664]],
+  };
+
+  // Magnitude visuelle : V(1,0) et coefficients de phase (Explanatory Supplement, simplifié).
+  const MAGNITUDE = {
+    mercury: (i) => -0.42 + 0.038 * i - 0.000273 * i * i + 0.000002 * i * i * i,
+    venus: (i) => -4.4 + 0.0009 * i + 0.000239 * i * i - 0.00000065 * i * i * i,
+    mars: (i) => -1.52 + 0.016 * i,
+    jupiter: (i) => -9.4 + 0.005 * i,
+    saturn: (i) => -8.88 + 0.044 * i,
+    uranus: () => -7.19,
+    neptune: () => -6.87,
+  };
+
+  /** Position héliocentrique écliptique (J2000, UA) d'une planète. */
+  function heliocentric(name, ms) {
+    const T = toDays(ms) / 36525;
+    const [base, rate] = ELEMENTS[name];
+    const [a, e, I, L, peri, node] = base.map((v, i) => v + rate[i] * T);
+    const w = (peri - node) * rad;
+    const O = node * rad;
+    const inc = I * rad;
+    let M = ((L - peri) % 360 + 540) % 360 - 180;
+    M *= rad;
+    let E = M + e * Math.sin(M);
+    for (let k = 0; k < 8; k++) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    const xp = a * (Math.cos(E) - e);
+    const yp = a * Math.sqrt(1 - e * e) * Math.sin(E);
+    const cw = Math.cos(w), sw = Math.sin(w), cO = Math.cos(O), sO = Math.sin(O), cI = Math.cos(inc), sI = Math.sin(inc);
+    return {
+      x: (cw * cO - sw * sO * cI) * xp + (-sw * cO - cw * sO * cI) * yp,
+      y: (cw * sO + sw * cO * cI) * xp + (-sw * sO + cw * cO * cI) * yp,
+      z: sw * sI * xp + cw * sI * yp,
+    };
+  }
+
+  const norm = (v) => Math.hypot(v.x, v.y, v.z);
+
+  /**
+   * Position d'une planète vue depuis le lieu : hauteur, azimut, magnitude,
+   * élongation (angle au Soleil) et coordonnées équatoriales, en degrés.
+   */
+  function planetPosition(ms, name, lat, lon) {
+    const p = heliocentric(name, ms);
+    const earth = heliocentric('earth', ms);
+    const g = { x: p.x - earth.x, y: p.y - earth.y, z: p.z - earth.z };
+    const ce = Math.cos(OBLIQUITY), se = Math.sin(OBLIQUITY);
+    const eq = { x: g.x, y: g.y * ce - g.z * se, z: g.y * se + g.z * ce };
+    const ra = Math.atan2(eq.y, eq.x) / rad;
+    const dec = Math.atan2(eq.z, Math.hypot(eq.x, eq.y)) / rad;
+    const r = norm(p);
+    const delta = norm(g);
+    const R = norm(earth);
+    const phaseAngle = Math.acos(clampUnit((r * r + delta * delta - R * R) / (2 * r * delta))) / rad;
+    const elongation = Math.acos(clampUnit((R * R + delta * delta - r * r) / (2 * R * delta))) / rad;
+    const pos = horizontalPosition(ms, (ra + 360) % 360, dec, lat, lon);
+    return {
+      ...pos,
+      ra: (ra + 360) % 360,
+      dec,
+      distance: delta,
+      elongation,
+      magnitude: 5 * Math.log10(r * delta) + MAGNITUDE[name](phaseAngle),
+    };
+  }
+
+  function clampUnit(v) {
+    return Math.min(1, Math.max(-1, v));
+  }
+
   const api = {
     sunPosition,
     moonPosition,
@@ -214,6 +318,8 @@
     nightEphemeris,
     nextPhase,
     findCrossings,
+    horizontalPosition,
+    planetPosition,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

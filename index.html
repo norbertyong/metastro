@@ -58,6 +58,8 @@
           <h2 id="verdictLabel"></h2>
           <p id="verdictSummary" class="muted"></p>
           <p id="bestWindow" class="best"></p>
+          <p id="confidence" class="confidence"></p>
+          <ul id="models" class="models" aria-label="Nébulosité moyenne prévue par chaque modèle"></ul>
         </div>
       </article>
 
@@ -82,6 +84,33 @@
         <p class="muted">Note moyenne pendant la nuit (Soleil sous −12°). Cliquez sur une nuit pour le détail.</p>
       </div>
       <div class="nights" id="nights"></div>
+    </section>
+
+    <section class="block" id="skyBlock" hidden>
+      <div class="block-head">
+        <h2 id="skyTitle">Quoi observer</h2>
+        <p class="muted">Positions calculées pour votre lieu et la nuit choisie.</p>
+      </div>
+      <div class="sky-grid">
+        <article class="card">
+          <h3>Planètes</h3>
+          <ul class="planets" id="planets"></ul>
+        </article>
+        <article class="card milky">
+          <h3>Cœur de la Voie lactée</h3>
+          <div id="milkyWay"></div>
+          <p class="small muted">Fenêtre où le centre galactique dépasse 10° de hauteur en pleine nuit astronomique : le moment pour la photographier.</p>
+        </article>
+      </div>
+      <article class="card deep">
+        <div class="deep-head">
+          <h3>Ciel profond</h3>
+          <div class="chips" id="skyFilters" role="group" aria-label="Filtrer par type d'objet"></div>
+        </div>
+        <p id="deepNote" class="small muted"></p>
+        <ol class="objects" id="deepSky"></ol>
+        <button id="deepMore" class="btn" type="button" hidden></button>
+      </article>
     </section>
 
     <section class="block" id="detailBlock" hidden>
@@ -130,6 +159,14 @@
           <p>Nuit astronomique quand le Soleil est sous −18°. Une Lune levée et bien éclairée illumine le ciel et noie les objets faibles.</p>
         </article>
         <article class="card">
+          <h3>Fiabilité</h3>
+          <p>Metastro compare la nébulosité prévue par quatre modèles (ECMWF, ICON, GFS, Météo-France). S'ils concordent, la prévision est fiable ; s'ils divergent, restez prudent.</p>
+        </article>
+        <article class="card">
+          <h3>Quoi observer</h3>
+          <p>Planètes, objets du ciel profond et Voie lactée sont classés pour la nuit choisie. Les galaxies et nébuleuses souffrent le plus de la Lune et d'un ciel voilé ; les amas et étoiles doubles s'en accommodent.</p>
+        </article>
+        <article class="card">
           <h3>Rosée</h3>
           <p>Quand l'écart entre température et point de rosée passe sous 2 °C, la buée menace les optiques : prévoyez une résistance chauffante.</p>
         </article>
@@ -144,6 +181,7 @@
 
   <script src="assets/js/astro.js"></script>
   <script src="assets/js/forecast.js"></script>
+  <script src="assets/js/sky.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

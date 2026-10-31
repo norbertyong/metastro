@@ -4,6 +4,7 @@
 
   const Astro = window.MetastroAstro;
   const Forecast = window.MetastroForecast;
+  const Sky = window.MetastroSky;
 
   const STORAGE_KEY = 'metastro.place';
   const NIGHT_KEY = 'metastro.night';
@@ -11,7 +12,15 @@
   const LEVELS = { excellent: 5, good: 4, fair: 3, poor: 2, bad: 1, none: 0 };
 
   const $ = (id) => document.getElementById(id);
-  const state = { place: null, data: null, selected: 0, request: 0 };
+  const state = { place: null, data: null, selected: 0, request: 0, skyFilter: 'all', skyExpanded: false };
+  const SKY_FILTERS = [
+    ['all', 'Tout'],
+    ['galaxies', 'Galaxies'],
+    ['nebulae', 'Nébuleuses'],
+    ['clusters', 'Amas'],
+    ['doubles', 'Étoiles doubles'],
+  ];
+  const DEEP_SKY_PREVIEW = window.matchMedia('(max-width: 720px)').matches ? 6 : 12;
 
   // ---------- Utilitaires ----------
   const escapeHtml = (s) =>
@@ -35,6 +44,8 @@
   const fmtLongDay = (ms) => formatter({ weekday: 'long', day: 'numeric', month: 'long' }).format(ms);
   const fmtDuration = (min) => `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
   const round = (v) => (v == null || Number.isNaN(v) ? '—' : Math.round(v));
+  const fmtMag = (m) => m.toFixed(1).replace('.', ',').replace('-', '−');
+  const confidenceDots = (c) => '●'.repeat(c.dots) + '○'.repeat(3 - c.dots);
 
   const fmtDate = (ms) => formatter({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(ms);
 
@@ -169,6 +180,19 @@
     if (night.dewRisk) parts.push('risque de rosée');
     $('verdictSummary').textContent = parts.length ? parts.join(' · ') : 'Le Soleil ne descend pas assez sous l\'horizon cette nuit.';
 
+    const conf = night.confidence;
+    const confEl = $('confidence');
+    if (conf) {
+      confEl.innerHTML = `Fiabilité <span class="conf conf-${conf.level}" aria-hidden="true">${confidenceDots(conf)}</span> <strong>${conf.text.toLowerCase()}</strong>
+        <span class="muted">· écart entre modèles ${conf.disagreement} pts</span>`;
+      $('models').innerHTML = conf.models
+        .map((m) => `<li title="Nébulosité moyenne prévue par ${escapeHtml(m.label)}">${escapeHtml(m.label)} <strong>${Math.round(m.cloud)} %</strong></li>`)
+        .join('');
+    } else {
+      confEl.innerHTML = '<span class="muted">Fiabilité : comparaison des modèles indisponible pour cette nuit.</span>';
+      $('models').innerHTML = '';
+    }
+
     $('bestWindow').textContent = night.bestWindow
       ? `Meilleur créneau : ${fmtTime(night.bestWindow.start)} → ${fmtTime(night.bestWindow.end)} (note ${night.bestWindow.score})`
       : 'Aucun créneau favorable cette nuit.';
@@ -216,6 +240,9 @@
           ${moonSvg(n.ephemeris.moon.phase, 16, south)} ${Math.round(n.ephemeris.moon.fraction * 100)} %
           · ☁ ${n.cloud == null ? '—' : Math.round(n.cloud) + ' %'}
         </span>
+        ${n.confidence
+          ? `<span class="meta" title="Fiabilité ${n.confidence.text.toLowerCase()}">fiabilité <span class="conf conf-${n.confidence.level}">${confidenceDots(n.confidence)}</span></span>`
+          : ''}
       </button>`;
     }).join('');
   }
@@ -254,6 +281,12 @@
       ['Nuages bas %', (h) => cloudCell(h.cloudLow)],
       ['Nuages moyens %', (h) => cloudCell(h.cloudMid)],
       ['Nuages hauts %', (h) => cloudCell(h.cloudHigh)],
+      ['Écart entre modèles', (h) => {
+        if (h.modelSpread == null) return '<td class="dim">—</td>';
+        const detail = Forecast.MODELS.filter((m) => typeof h.models[m.id] === 'number')
+          .map((m) => `${m.label} ${Math.round(h.models[m.id])} %`).join(', ');
+        return `<td class="${h.modelSpread > 40 ? 'warn' : ''}" title="${escapeHtml(detail)}">${Math.round(h.modelSpread)}</td>`;
+      }],
       ['Transparence /5', (h) => levelCell(h.transparency), 'sep'],
       ['Seeing /5', (h) => levelCell(h.seeing)],
       ['Ciel', (h) => {
@@ -283,12 +316,95 @@
     $('timeline').innerHTML = timelineSvg(night);
   }
 
+  // ---------- Quoi observer ----------
+  function skyFor(night) {
+    if (!night.sky) {
+      const { lat, lon } = state.place;
+      night.sky = {
+        planets: Sky.planetsForNight(night.start, lat, lon),
+        deepSky: Sky.deepSkyForNight(night.hours, lat, lon),
+        milkyWay: Sky.milkyWayForNight(night.start, lat, lon),
+      };
+    }
+    return night.sky;
+  }
+
+  const fmtWindows = (wins) => wins.map((w) => `${fmtTime(w.start)} → ${fmtTime(w.end)}`).join(' et ');
+
+  function renderSky() {
+    const night = state.data.nights[state.selected];
+    const sky = skyFor(night);
+    $('skyTitle').textContent = `Quoi observer — ${nightName(night).toLowerCase()}`;
+
+    $('planets').innerHTML = sky.planets.map((p) => {
+      const detail = p.visible
+        ? `Visible ${fmtWindows(p.windows)} · au plus haut à ${fmtTime(p.best.time)}, ${Math.round(p.best.altitude)}° ${p.best.direction}`
+        : p.reason;
+      return `<li class="${p.visible ? '' : 'off'}">
+        <span class="dot" style="background:${p.color}" aria-hidden="true"></span>
+        <div>
+          <strong>${p.name}</strong> <span class="muted">mag ${fmtMag(p.magnitude)}${p.telescope ? ' · jumelles ou télescope' : ''}</span>
+          <div class="small">${escapeHtml(detail)}</div>
+        </div>
+      </li>`;
+    }).join('');
+
+    const mw = sky.milkyWay;
+    $('milkyWay').innerHTML = mw.visible
+      ? `<p class="big">${fmtWindows(mw.windows)}</p>
+         <p class="muted">Hauteur maximale ${Math.round(mw.maxAlt)}° en nuit astronomique.
+         ${mw.moonFreeMinutes ? `Dont ${fmtDuration(mw.moonFreeMinutes)} sans Lune.` : 'La Lune est levée pendant toute la fenêtre.'}</p>`
+      : `<p class="big">Non visible</p><p class="muted">${escapeHtml(mw.reason)}.</p>`;
+
+    $('skyFilters').innerHTML = SKY_FILTERS.map(([id, label]) =>
+      `<button type="button" class="chip" data-filter="${id}" aria-pressed="${state.skyFilter === id}">${label}</button>`).join('');
+
+    const list = sky.deepSky.filter((o) => state.skyFilter === 'all' || o.group === state.skyFilter);
+    const shown = state.skyExpanded ? list : list.slice(0, DEEP_SKY_PREVIEW);
+    const darkHours = night.hours.filter((h) => h.sunAlt < -12);
+    let note = 'Classement selon la hauteur, l’éclat de l’objet, la Lune et la transparence prévues.';
+    if (!darkHours.length) note = 'Pas de nuit assez sombre pour le ciel profond (Soleil jamais sous −12°).';
+    else if (night.cloud != null && night.cloud > 75) note = 'Ciel très nuageux prévu : liste donnée à titre indicatif.';
+    else if (!list.length) note = 'Aucun objet de cette catégorie assez haut cette nuit.';
+    $('deepNote').textContent = note;
+
+    $('deepSky').innerHTML = shown.map((o) => `<li class="obj">
+        <div class="obj-head"><strong>${escapeHtml(o.id)}</strong>${o.name ? ` <span>${escapeHtml(o.name)}</span>` : ''}</div>
+        <div class="small muted">${o.typeLabel} · ${escapeHtml(o.constellation)} · mag ${fmtMag(o.mag)}</div>
+        <div class="small">Idéal vers ${fmtTime(o.time)} · ${Math.round(o.altitude)}° ${o.direction}</div>
+        <div class="obj-foot">
+          <span class="meter" title="Intérêt ${o.score}/100"><span style="width:${o.score}%"></span></span>
+          ${o.demanding ? '<span class="tag">Ciel trop clair</span>' : ''}
+        </div>
+      </li>`).join('');
+
+    const more = $('deepMore');
+    more.hidden = list.length <= DEEP_SKY_PREVIEW;
+    more.textContent = state.skyExpanded ? 'Afficher moins' : `Afficher tout (${list.length})`;
+  }
+
+  function initSky() {
+    $('skyFilters').addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-filter]');
+      if (!chip) return;
+      state.skyFilter = chip.dataset.filter;
+      state.skyExpanded = false;
+      renderSky();
+    });
+    $('deepMore').addEventListener('click', () => {
+      state.skyExpanded = !state.skyExpanded;
+      renderSky();
+    });
+  }
+
   function render() {
     renderHero();
     renderNights();
+    renderSky();
     renderTable();
     $('hero').hidden = false;
     $('nightsBlock').hidden = false;
+    $('skyBlock').hidden = false;
     $('detailBlock').hidden = false;
     document.title = `${state.place.name} — Metastro, météo astro`;
   }
@@ -436,6 +552,7 @@
       state.selected = Number(card.dataset.index);
       renderHero();
       renderNights();
+      renderSky();
       renderTable();
       $('hero').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -475,6 +592,7 @@
     initSearch();
     initLocate();
     initNights();
+    initSky();
     loadPlace(initialPlace());
   }
 

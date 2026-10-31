@@ -6,6 +6,8 @@ Metastro est un site statique de prévisions météo pour l'astronomie amateur. 
 
 - **Note d'observation de 0 à 100** pour chaque heure et chaque nuit. Elle combine les nuages, l'obscurité, la transparence, le seeing, le vent et les précipitations.
 - **7 nuits de prévisions**, avec le meilleur créneau d'observation de chaque nuit.
+- **Fiabilité de la prévision** : la nébulosité de quatre modèles (ECMWF, ICON, GFS, Météo-France) est comparée nuit par nuit et heure par heure.
+- **Quoi observer** : planètes visibles avec horaires, hauteur et direction ; environ 70 objets du ciel profond classés pour la nuit selon la hauteur, la Lune et le ciel prévu ; fenêtre du cœur de la Voie lactée.
 - **Tableau heure par heure** : nuages bas, moyens et hauts, transparence, seeing, hauteur de la Lune, humidité, écart au point de rosée, vent, rafales, courant-jet et précipitations.
 - **Frise de 24 h** : jour, crépuscules civil, nautique et astronomique, nuit noire et présence de la Lune.
 - **Éphémérides** calculées dans le navigateur : coucher et lever du Soleil, nuit astronomique, lever et coucher de la Lune, phase, illumination, prochaines pleine et nouvelle lune.
@@ -17,9 +19,11 @@ Metastro est un site statique de prévisions météo pour l'astronomie amateur. 
 | Donnée | Source |
 | --- | --- |
 | Prévisions météo horaires | [Open-Meteo](https://open-meteo.com/) (gratuit, sans clé, CC BY 4.0) |
+| Comparaison des modèles | Open-Meteo, paramètre `models` (ECMWF IFS, ICON, GFS, Météo-France) |
 | Recherche de lieux | API de géocodage d'Open-Meteo |
 | Nom du lieu après géolocalisation | BigDataCloud (reverse geocoding côté client) |
-| Soleil et Lune | Calcul local (`assets/js/astro.js`) |
+| Soleil, Lune et planètes | Calcul local (`assets/js/astro.js`), éléments orbitaux du JPL (E. M. Standish) |
+| Catalogue du ciel profond | Coordonnées J2000 intégrées (`assets/js/sky.js`) |
 
 Le seeing et la transparence sont des **estimations**. Le seeing vient du courant-jet à 250 hPa et des rafales au sol. La transparence vient de l'humidité, de la visibilité et des nuages hauts.
 
@@ -40,7 +44,7 @@ On peut aussi ouvrir directement `index.html` dans un navigateur.
 npm test           # Node.js 18 ou plus récent
 ```
 
-Les tests vérifient les éphémérides contre des valeurs connues (équinoxe 2024 à Paris, phases d'avril 2024). Ils couvrent aussi les indices et le découpage des prévisions en nuits.
+Les tests vérifient les éphémérides contre des événements connus : équinoxe 2024 à Paris, phases d'avril 2024, oppositions de Jupiter, Saturne et Mars, élongations de Vénus et Mercure. Ils couvrent aussi les indices, la fiabilité multi-modèles, le classement du ciel profond et la Voie lactée.
 
 ## Releases
 
@@ -63,8 +67,9 @@ Dans **Settings → Pages**, choisissez **Deploy from a branch**, puis la branch
 index.html
 assets/
   css/style.css
-  js/astro.js      éphémérides Soleil / Lune
-  js/forecast.js   appels API et calcul des notes
+  js/astro.js      éphémérides Soleil, Lune et planètes
+  js/forecast.js   appels API, notes et fiabilité
+  js/sky.js        quoi observer : planètes, ciel profond, Voie lactée
   js/app.js        interface
   favicon.svg
 tests/metastro.test.js

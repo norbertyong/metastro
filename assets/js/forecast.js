@@ -26,6 +26,20 @@
     'precipitation_probability',
   ];
 
+  // Modèles comparés pour l'indice de confiance (nébulosité totale).
+  const MODELS = [
+    { id: 'ecmwf_ifs025', label: 'ECMWF' },
+    { id: 'icon_seamless', label: 'ICON' },
+    { id: 'gfs_seamless', label: 'GFS' },
+    { id: 'meteofrance_seamless', label: 'Météo-France' },
+  ];
+
+  const CONFIDENCE = {
+    high: { text: 'Élevée', dots: 3 },
+    medium: { text: 'Moyenne', dots: 2 },
+    low: { text: 'Faible', dots: 1 },
+  };
+
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
   const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
@@ -97,8 +111,47 @@
     return parseInt(h, 10);
   }
 
+  /**
+   * Extrait la nébulosité de chaque modèle d'une réponse multi-modèles
+   * (variables `cloud_cover_<modèle>`) : Map heure (s) → { modèle: valeur }.
+   */
+  function parseModels(data) {
+    if (!data || !data.hourly || !Array.isArray(data.hourly.time)) return null;
+    const ids = MODELS.map((m) => m.id).filter((id) => Array.isArray(data.hourly[`cloud_cover_${id}`]));
+    if (ids.length < 2) return null;
+    const byTime = new Map();
+    data.hourly.time.forEach((sec, i) => {
+      const row = {};
+      for (const id of ids) row[id] = data.hourly[`cloud_cover_${id}`][i];
+      byTime.set(sec, row);
+    });
+    return byTime;
+  }
+
+  /**
+   * Confiance dans la prévision d'une nuit : écart de nébulosité entre modèles,
+   * moyenne de l'écart sur la nuit entière et de l'écart heure par heure.
+   */
+  function modelConfidence(hours) {
+    if (!hours.length || !hours[0].models) return null;
+    const models = MODELS.map((m) => {
+      const values = hours.map((h) => h.models && h.models[m.id]).filter((v) => typeof v === 'number');
+      if (values.length < hours.length / 2) return null;
+      return { ...m, cloud: values.reduce((a, b) => a + b, 0) / values.length };
+    }).filter(Boolean);
+    if (models.length < 2) return null;
+    const clouds = models.map((m) => m.cloud);
+    const nightSpread = Math.max(...clouds) - Math.min(...clouds);
+    const spreads = hours.map((h) => h.modelSpread).filter((v) => typeof v === 'number');
+    const hourlySpread = spreads.length ? spreads.reduce((a, b) => a + b, 0) / spreads.length : nightSpread;
+    const disagreement = Math.round((nightSpread + hourlySpread) / 2);
+    const level = disagreement < 15 ? 'high' : disagreement < 30 ? 'medium' : 'low';
+    return { level, ...CONFIDENCE[level], disagreement, models };
+  }
+
   /** Transforme la réponse Open-Meteo en heures enrichies puis en nuits (midi → midi). */
-  function buildNights(data, lat, lon, now) {
+  function buildNights(data, lat, lon, now, modelData) {
+    const byModel = parseModels(modelData);
     const H = data.hourly;
     const tz = data.timezone;
     const hours = H.time.map((sec, i) => {
@@ -132,6 +185,12 @@
       hour.transparency = transparencyIndex(hour.humidity, hour.visibility, hour.cloudHigh);
       hour.darkness = darknessIndex(hour.sunAlt, hour.moonAlt, moonFraction);
       hour.score = hour.cloud == null ? null : hourScore(hour);
+      const row = byModel && byModel.get(sec);
+      if (row) {
+        hour.models = row;
+        const values = Object.values(row).filter((v) => typeof v === 'number');
+        hour.modelSpread = values.length >= 2 ? Math.max(...values) - Math.min(...values) : null;
+      }
       return hour;
     });
 
@@ -183,6 +242,7 @@
       seeing: avg('seeing'),
       transparency: avg('transparency'),
       dewRisk: night.some((h) => h.dewSpread < 2),
+      confidence: modelConfidence(night),
       bestWindow: best ? { start: best.start, end: best.end, score: Math.round(mean(best.hours)) } : null,
       hours: display,
     };
@@ -195,29 +255,40 @@
   async function fetchJson(url, retries = 1) {
     try {
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`Erreur réseau (${res.status})`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const err = new Error((body && body.reason) || `Erreur réseau (${res.status})`);
+        // Une requête refusée (quota, paramètre) ne réussira pas mieux au second essai.
+        err.final = res.status >= 400 && res.status < 500;
+        throw err;
+      }
       return await res.json();
     } catch (err) {
       // Les API publiques échouent parfois ponctuellement : une seconde tentative suffit souvent.
-      if (retries <= 0) throw err;
+      if (retries <= 0 || err.final) throw err;
       await new Promise((r) => setTimeout(r, 1200));
       return fetchJson(url, retries - 1);
     }
   }
 
   async function fetchForecast(lat, lon) {
-    const params = new URLSearchParams({
+    const common = {
       latitude: lat.toFixed(4),
       longitude: lon.toFixed(4),
-      hourly: HOURLY_VARS.join(','),
       timezone: 'auto',
       timeformat: 'unixtime',
       past_days: '1',
       forecast_days: '8',
-    });
-    const data = await fetchJson(`${FORECAST_URL}?${params}`);
+    };
+    const params = new URLSearchParams({ ...common, hourly: HOURLY_VARS.join(',') });
+    const modelParams = new URLSearchParams({ ...common, hourly: 'cloud_cover', models: MODELS.map((m) => m.id).join(',') });
+    // La comparaison des modèles est un bonus : son échec ne bloque pas les prévisions.
+    const [data, models] = await Promise.all([
+      fetchJson(`${FORECAST_URL}?${params}`),
+      fetchJson(`${FORECAST_URL}?${modelParams}`, 0).catch(() => null),
+    ]);
     if (data.error) throw new Error(data.reason || 'Prévisions indisponibles');
-    return { ...buildNights(data, lat, lon, Date.now()), elevation: data.elevation };
+    return { ...buildNights(data, lat, lon, Date.now(), models), elevation: data.elevation };
   }
 
   async function searchPlaces(query) {
@@ -250,6 +321,8 @@
     hourScore,
     scoreLabel,
     buildNights,
+    modelConfidence,
+    MODELS,
     fetchForecast,
     searchPlaces,
     reverseGeocode,
