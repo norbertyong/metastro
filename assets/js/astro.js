@@ -73,6 +73,8 @@
       altitude: h / rad,
       azimuth: (azimuth(H, phi, c.dec) / rad + 180) % 360,
       distance: c.dist,
+      ra: ((c.ra / rad) + 360) % 360,
+      dec: c.dec / rad,
     };
   }
 
@@ -296,14 +298,25 @@
     const phaseAngle = Math.acos(clampUnit((r * r + delta * delta - R * R) / (2 * r * delta))) / rad;
     const elongation = Math.acos(clampUnit((R * R + delta * delta - r * r) / (2 * R * delta))) / rad;
     const pos = horizontalPosition(ms, (ra + 360) % 360, dec, lat, lon);
+    // À l'est du Soleil (visible le soir) si sa longitude écliptique le précède de moins de 180°.
+    const lambda = Math.atan2(g.y, g.x) / rad;
+    const sunLambda = Math.atan2(-earth.y, -earth.x) / rad;
     return {
       ...pos,
       ra: (ra + 360) % 360,
       dec,
       distance: delta,
       elongation,
+      east: (lambda - sunLambda + 720) % 360 < 180,
       magnitude: 5 * Math.log10(r * delta) + MAGNITUDE[name](phaseAngle),
     };
+  }
+
+  /** Distance angulaire (degrés) entre deux points de coordonnées équatoriales en degrés. */
+  function angularSeparation(ra1, dec1, ra2, dec2) {
+    const c = Math.sin(dec1 * rad) * Math.sin(dec2 * rad) +
+      Math.cos(dec1 * rad) * Math.cos(dec2 * rad) * Math.cos((ra1 - ra2) * rad);
+    return Math.acos(clampUnit(c)) / rad;
   }
 
   function clampUnit(v) {
@@ -320,6 +333,7 @@
     findCrossings,
     horizontalPosition,
     planetPosition,
+    angularSeparation,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

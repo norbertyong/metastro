@@ -22,7 +22,9 @@
 html { -webkit-text-size-adjust: 100%; }
 
 /* Mode vision nocturne : tout passe en rouge pour préserver l'adaptation à l'obscurité. */
-html.night body {
+html.night-vision body,
+html.night-vision .dialog[open] {
+  /* La fiche s'affiche au premier plan, hors du filtre de body : elle le reçoit directement. */
   filter: grayscale(1) sepia(1) saturate(6) hue-rotate(-50deg) brightness(0.65);
 }
 
@@ -319,6 +321,106 @@ main {
 .meter span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--lvl-5)); }
 .tag { font-size: 0.72rem; padding: 1px 8px; border-radius: 999px; background: rgba(232, 135, 58, 0.18); color: var(--lvl-2); white-space: nowrap; }
 
+/* ---------- Fiche, liste et calendrier ---------- */
+.grow { flex: 1; min-width: 0; }
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.linkish:hover strong, .linkish:hover span { text-decoration: underline; text-underline-offset: 3px; }
+.linkish:focus-visible, .star:focus-visible, .chip:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.star {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--card-border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.star:hover { border-color: var(--accent); color: var(--accent); }
+.star[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(245, 199, 107, 0.12); }
+.obj-foot .star { width: 28px; height: 28px; font-size: 0.9rem; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn:disabled:hover { border-color: var(--card-border); }
+
+.list-card { margin-top: 16px; }
+.list-card .deep-head { margin-bottom: 10px; }
+.table-scroll { position: relative; overflow-x: auto; }
+.list-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.list-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+.list-table td { padding: 6px 8px; border-bottom: 1px solid rgba(140, 160, 255, 0.07); vertical-align: middle; }
+.list-table tr.off td { color: var(--muted); }
+.list-table td:last-child { width: 40px; text-align: right; }
+.list-table .obj-name { display: block; }
+
+.dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  background: #0f1736;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.dialog::backdrop { background: rgba(3, 6, 16, 0.7); backdrop-filter: blur(2px); }
+.dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.dialog-head h2 { margin-bottom: 2px; }
+.chart { margin: 14px 0 10px; }
+.chart svg { display: block; width: 100%; height: auto; border-radius: 8px; }
+.chart text { fill: var(--muted); font-size: 13px; font-family: inherit; }
+.chart .legend { margin-top: 8px; }
+.sw.sw-dash { background: repeating-linear-gradient(90deg, #c9d3f5 0 5px, transparent 5px 9px); height: 3px; border-radius: 0; }
+.sw.sw-dot { border-radius: 50%; background: var(--accent); }
+.dialog-foot { margin-top: 14px; display: flex; justify-content: flex-end; }
+#dialogStar[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
+#calendarBlock .block-head h2 span { font-weight: 400; }
+#calFilters { margin-bottom: 6px; }
+.month { margin: 18px 0 8px; font-size: 0.95rem; text-transform: capitalize; color: var(--accent); }
+.events { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.event {
+  display: grid;
+  grid-template-columns: 52px 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: rgba(7, 11, 26, 0.45);
+}
+.event p { margin: 2px 0 0; }
+.ev-date { display: grid; justify-items: center; line-height: 1.1; }
+.ev-date strong { font-size: 1.3rem; }
+.ev-date small { color: var(--muted); font-size: 0.72rem; }
+.ev-icon { font-size: 1.2rem; text-align: center; margin-top: 6px; }
+.ev-meteors .ev-icon { color: #9fd8de; }
+.ev-planets .ev-icon { color: var(--accent); }
+.ev-moon .ev-icon { color: #f3e7c4; }
+.ev-eclipses .ev-icon { color: var(--lvl-2); }
+
+.print-only { display: none; }
+
+@media print {
+  body > *:not(#printList) { display: none !important; }
+  html.night-vision body { filter: none; }
+  body { background: #fff; color: #000; }
+  #printList { display: block; font-size: 11pt; }
+  #printList h1 { font-size: 16pt; margin-bottom: 4pt; }
+  #printList table { width: 100%; border-collapse: collapse; margin-top: 10pt; }
+  #printList th, #printList td { border: 1px solid #999; padding: 4pt 6pt; text-align: left; }
+  #printList th { background: #eee; }
+}
+
 /* ---------- Frise et tableau ---------- */
 .timeline-card { padding: 14px 16px 8px; margin-bottom: 12px; }
 .tl svg { display: block; width: 100%; height: 56px; border-radius: 6px; }
@@ -417,6 +519,10 @@ main {
   .moon-card { flex-direction: row; }
   .nights { grid-template-columns: repeat(2, 1fr); }
   .tl-ticks span.odd { display: none; }
+  .event { grid-template-columns: 44px 22px 1fr; gap: 8px; }
+  .list-table .col-type { display: none; }
+  .chart text { font-size: 18px; }
+  .dialog { padding: 16px; }
   .hourly tbody th { min-width: 108px; }
 }
 

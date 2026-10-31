@@ -5,14 +5,26 @@
   const Astro = window.MetastroAstro;
   const Forecast = window.MetastroForecast;
   const Sky = window.MetastroSky;
+  const Calendar = window.MetastroCalendar;
 
   const STORAGE_KEY = 'metastro.place';
   const NIGHT_KEY = 'metastro.night';
+  const LIST_KEY = 'metastro.list';
   const DEFAULT_PLACE = { name: 'Paris', detail: 'Île-de-France, France', lat: 48.8566, lon: 2.3522 };
   const LEVELS = { excellent: 5, good: 4, fair: 3, poor: 2, bad: 1, none: 0 };
 
   const $ = (id) => document.getElementById(id);
-  const state = { place: null, data: null, selected: 0, request: 0, skyFilter: 'all', skyExpanded: false };
+  const state = {
+    place: null, data: null, selected: 0, request: 0, skyFilter: 'all', skyExpanded: false,
+    list: new Set(), dialogId: null, calFilter: 'all', calLong: false, calendar: null,
+  };
+  const CAL_FILTERS = [
+    ['all', 'Tout'],
+    ['meteors', 'Étoiles filantes'],
+    ['planets', 'Planètes'],
+    ['moon', 'Lune'],
+    ['eclipses', 'Éclipses'],
+  ];
   const SKY_FILTERS = [
     ['all', 'Tout'],
     ['galaxies', 'Galaxies'],
@@ -100,6 +112,9 @@
     </svg>`;
   }
 
+  const sunColor = (alt) =>
+    alt > -0.833 ? '#4f7bd9' : alt > -6 ? '#35529b' : alt > -12 ? '#233366' : alt > -18 ? '#171f48' : '#080c20';
+
   /** Frise de 24 h (midi → midi) : bandes de crépuscule et présence de la Lune. */
   function timelineSvg(night) {
     const W = 1000;
@@ -108,8 +123,6 @@
     const step = 10 * 60000;
     const x = (t) => ((t - start) / span) * W;
     const { lat, lon } = state.place;
-    const sunColor = (alt) =>
-      alt > -0.833 ? '#4f7bd9' : alt > -6 ? '#35529b' : alt > -12 ? '#233366' : alt > -18 ? '#171f48' : '#080c20';
 
     let rects = '';
     for (let t = start; t < start + span; t += step) {
@@ -342,10 +355,12 @@
         : p.reason;
       return `<li class="${p.visible ? '' : 'off'}">
         <span class="dot" style="background:${p.color}" aria-hidden="true"></span>
-        <div>
-          <strong>${p.name}</strong> <span class="muted">mag ${fmtMag(p.magnitude)}${p.telescope ? ' · jumelles ou télescope' : ''}</span>
+        <div class="grow">
+          <button type="button" class="linkish" data-object="${p.id}"><strong>${p.name}</strong></button>
+          <span class="muted">mag ${fmtMag(p.magnitude)}${p.telescope ? ' · jumelles ou télescope' : ''}</span>
           <div class="small">${escapeHtml(detail)}</div>
         </div>
+        ${starButton(p.id, p.name)}
       </li>`;
     }).join('');
 
@@ -369,18 +384,284 @@
     $('deepNote').textContent = note;
 
     $('deepSky').innerHTML = shown.map((o) => `<li class="obj">
-        <div class="obj-head"><strong>${escapeHtml(o.id)}</strong>${o.name ? ` <span>${escapeHtml(o.name)}</span>` : ''}</div>
+        <button type="button" class="linkish obj-head" data-object="${escapeHtml(o.id)}"><strong>${escapeHtml(o.id)}</strong>${o.name ? ` <span>${escapeHtml(o.name)}</span>` : ''}</button>
         <div class="small muted">${o.typeLabel} · ${escapeHtml(o.constellation)} · mag ${fmtMag(o.mag)}</div>
         <div class="small">Idéal vers ${fmtTime(o.time)} · ${Math.round(o.altitude)}° ${o.direction}</div>
         <div class="obj-foot">
           <span class="meter" title="Intérêt ${o.score}/100"><span style="width:${o.score}%"></span></span>
           ${o.demanding ? '<span class="tag">Ciel trop clair</span>' : ''}
+          ${starButton(o.id, o.name || o.id)}
         </div>
       </li>`).join('');
 
     const more = $('deepMore');
     more.hidden = list.length <= DEEP_SKY_PREVIEW;
     more.textContent = state.skyExpanded ? 'Afficher moins' : `Afficher tout (${list.length})`;
+
+    renderList();
+  }
+
+  // ---------- Liste d'observation ----------
+  function starButton(id, name) {
+    const on = state.list.has(id);
+    const action = on ? `Retirer ${name} de ma liste` : `Ajouter ${name} à ma liste`;
+    return `<button type="button" class="star" data-star="${escapeHtml(id)}" aria-pressed="${on}"
+      title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}">${on ? '★' : '☆'}</button>`;
+  }
+
+  function toggleList(id) {
+    if (state.list.has(id)) state.list.delete(id);
+    else state.list.add(id);
+    storage.set(LIST_KEY, [...state.list]);
+    renderSky();
+    if (state.dialogId) renderDialog();
+  }
+
+  /** Objets de la liste avec leur meilleur moment de la nuit choisie, par ordre de passage. */
+  function listEntries(night) {
+    const sky = skyFor(night);
+    return [...state.list].map((id) => {
+      const obj = Sky.findObject(id);
+      if (!obj) return null;
+      if (obj.kind === 'planet') {
+        const p = sky.planets.find((x) => x.id === id);
+        return {
+          obj, magnitude: p.magnitude, visible: p.visible, windows: p.windows,
+          time: p.best && p.best.time, altitude: p.best && p.best.altitude, direction: p.best && p.best.direction,
+          note: p.visible ? '' : p.reason,
+        };
+      }
+      const d = sky.deepSky.find((x) => x.id === id);
+      return {
+        obj, magnitude: obj.mag, visible: !!d, windows: [],
+        time: d && d.time, altitude: d && d.altitude, direction: d && d.direction,
+        note: d ? (d.demanding ? 'Ciel trop clair' : '') : 'Trop bas cette nuit',
+      };
+    }).filter(Boolean).sort((a, b) => (a.visible === b.visible ? (a.time || 0) - (b.time || 0) : a.visible ? -1 : 1));
+  }
+
+  const entryLabel = (e) => (e.obj.kind === 'planet' ? e.obj.name : [e.obj.id, e.obj.name].filter(Boolean).join(' · '));
+
+  function renderList() {
+    const night = state.data.nights[state.selected];
+    const entries = listEntries(night);
+    $('listCount').textContent = entries.length ? `(${entries.length})` : '';
+    $('listPrint').disabled = !entries.length;
+    $('listCsv').disabled = !entries.length;
+    $('listClear').disabled = !entries.length;
+    if (!entries.length) {
+      $('obsList').innerHTML = '<p class="small muted">Ajoutez des planètes ou des objets avec ☆ pour préparer votre soirée : ils s’affichent ici dans l’ordre où les observer.</p>';
+      return;
+    }
+    $('obsList').innerHTML = `<div class="table-scroll"><table class="list-table">
+      <thead><tr><th scope="col">Objet</th><th scope="col" class="col-type">Type</th><th scope="col">Heure</th><th scope="col">Hauteur</th><th scope="col"><span class="visually-hidden">Retirer</span></th></tr></thead>
+      <tbody>${entries.map((e) => `<tr class="${e.visible ? '' : 'off'}">
+        <td><button type="button" class="linkish" data-object="${escapeHtml(e.obj.id)}">${e.obj.kind === 'planet'
+          ? escapeHtml(e.obj.name)
+          : `${escapeHtml(e.obj.id)}${e.obj.name ? `<span class="obj-name small muted">${escapeHtml(e.obj.name)}</span>` : ''}`}</button></td>
+        <td class="col-type">${e.obj.typeLabel}</td>
+        <td>${e.visible ? fmtTime(e.time) : escapeHtml(e.note)}</td>
+        <td>${e.visible ? `${Math.round(e.altitude)}° ${e.direction}` : '—'}${e.visible && e.note ? ` <span class="tag">${escapeHtml(e.note)}</span>` : ''}</td>
+        <td>${starButton(e.obj.id, entryLabel(e))}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+
+  function listRows(night) {
+    return listEntries(night).map((e) => [
+      e.obj.kind === 'planet' ? e.obj.name : e.obj.id,
+      e.obj.kind === 'planet' ? '' : e.obj.name,
+      e.obj.typeLabel,
+      e.obj.constellation || '',
+      fmtMag(e.magnitude),
+      e.visible ? fmtTime(e.time) : '',
+      e.visible ? String(Math.round(e.altitude)) : '',
+      e.visible ? e.direction : '',
+      e.visible ? (e.windows.length ? fmtWindows(e.windows) : 'oui') : e.note,
+    ]);
+  }
+
+  const LIST_HEAD = ['Objet', 'Nom', 'Type', 'Constellation', 'Magnitude', 'Meilleur moment', 'Hauteur (°)', 'Direction', 'Visibilité'];
+
+  function exportCsv() {
+    const night = state.data.nights[state.selected];
+    const cell = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [LIST_HEAD, ...listRows(night)].map((r) => r.map(cell).join(';')).join('\r\n');
+    const isoDay = new Intl.DateTimeFormat('en-CA', { timeZone: state.data.timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(night.start);
+    const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `metastro-liste-${isoDay}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function printList() {
+    const night = state.data.nights[state.selected];
+    $('printList').innerHTML = `<h1>Metastro — liste d'observation</h1>
+      <p>${escapeHtml(state.place.name)} · ${escapeHtml(nightName(night))} (${escapeHtml(fmtLongDay(night.start))})
+        · note ${night.score == null ? '—' : night.score}/100 · Lune ${Math.round(night.ephemeris.moon.fraction * 100)} %</p>
+      <table><thead><tr>${LIST_HEAD.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${listRows(night).map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    window.print();
+  }
+
+  // ---------- Fiche d'un objet ----------
+  function altitudeChart(obj, night, from, to, best) {
+    const W = 560, H = 230, L = 46, R = 8, T = 10, B = 28;
+    const { lat, lon } = state.place;
+    const x = (t) => L + ((t - from) / (to - from)) * (W - L - R);
+    const y = (a) => T + ((90 - Math.max(-10, Math.min(90, a))) / 100) * (H - T - B);
+    const step = 10 * 60000;
+    let bands = '';
+    for (let t = from; t < to; t += step) {
+      const sun = Astro.sunPosition(t + step / 2, lat, lon).altitude;
+      bands += `<rect x="${x(t).toFixed(1)}" y="${T}" width="${(x(t + step) - x(t) + 0.5).toFixed(1)}" height="${H - T - B}" fill="${sunColor(sun)}"/>`;
+    }
+    const line = (points) => points.map((p, i) => `${i ? 'L' : 'M'}${x(p.time).toFixed(1)},${y(p.altitude).toFixed(1)}`).join('');
+    const objPath = line(Sky.track(obj, from, to, lat, lon));
+    const moonPts = [];
+    for (let t = from; t <= to; t += step) moonPts.push({ time: t, altitude: Astro.moonPosition(t, lat, lon).altitude });
+    let grid = '';
+    for (const a of [0, 30, 60, 90]) {
+      grid += `<line x1="${L}" x2="${W - R}" y1="${y(a)}" y2="${y(a)}" stroke="${a ? 'rgba(255,255,255,.12)' : 'rgba(255,255,255,.55)'}" ${a ? 'stroke-dasharray="3 4"' : ''}/>`;
+      grid += `<text x="${L - 6}" y="${y(a) + 4}" text-anchor="end">${a}°</text>`;
+    }
+    for (let t = Math.ceil(from / 3600000) * 3600000; t <= to; t += 2 * 3600000) {
+      grid += `<text x="${x(t)}" y="${H - 8}" text-anchor="middle">${fmtHour(t)}</text>`;
+    }
+    const now = Date.now();
+    const nowLine = now > from && now < to
+      ? `<line x1="${x(now)}" x2="${x(now)}" y1="${T}" y2="${H - B}" stroke="#fff" stroke-width="1.5"/>` : '';
+    const marker = best ? `<circle cx="${x(best.time)}" cy="${y(best.altitude)}" r="5" fill="${obj.color || 'var(--accent)'}" stroke="#08101f" stroke-width="2"/>` : '';
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hauteur de ${escapeHtml(obj.name || obj.id)} au cours de la nuit">
+        ${bands}${grid}
+        <path d="${line(moonPts)}" fill="none" stroke="#c9d3f5" stroke-opacity=".7" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <path d="${objPath}" fill="none" stroke="${obj.color || 'var(--accent)'}" stroke-width="2.5"/>
+        ${marker}${nowLine}
+      </svg>
+      <ul class="legend">
+        <li><span class="sw" style="background:${obj.color || 'var(--accent)'}"></span>${escapeHtml(obj.name || obj.id)}</li>
+        <li><span class="sw sw-dash"></span>Lune</li>
+        <li><span class="sw" style="background:#080c20;border:1px solid #334"></span>Nuit noire</li>
+        ${best ? '<li><span class="sw sw-dot"></span>Meilleur moment</li>' : ''}
+      </ul>`;
+  }
+
+  function openObject(id) {
+    if (!Sky.findObject(id)) return;
+    state.dialogId = id;
+    renderDialog();
+    const dialog = $('objectDialog');
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function renderDialog() {
+    const obj = Sky.findObject(state.dialogId);
+    const night = state.data.nights[state.selected];
+    const { lat, lon } = state.place;
+    const sky = skyFor(night);
+    const info = obj.kind === 'planet' ? sky.planets.find((p) => p.id === obj.id) : sky.deepSky.find((o) => o.id === obj.id);
+    const best = info && (obj.kind === 'planet' ? info.best : info.time ? { time: info.time, altitude: info.altitude, direction: info.direction } : null);
+    const magnitude = obj.kind === 'planet' ? info.magnitude : obj.mag;
+
+    $('dialogType').textContent = `${obj.typeLabel} · ${nightName(night)}`;
+    $('dialogTitle').textContent = obj.kind === 'planet' ? obj.name : [obj.id, obj.name].filter(Boolean).join(' — ');
+    $('dialogMeta').textContent = [obj.constellation, `magnitude ${fmtMag(magnitude)}`].filter(Boolean).join(' · ');
+
+    const from = night.hours.length ? night.hours[0].time : night.start + 5 * 3600000;
+    const to = night.hours.length ? night.hours[night.hours.length - 1].time + 3600000 : night.start + 19 * 3600000;
+    $('dialogChart').innerHTML = altitudeChart(obj, night, from, to, best);
+
+    const rts = Sky.riseTransitSet(obj, night.start, lat, lon);
+    const facts = [];
+    if (rts.circumpolar) facts.push(['Lever et coucher', 'Toujours au-dessus de l’horizon']);
+    else if (rts.neverRises) facts.push(['Lever et coucher', 'Ne se lève pas ce jour-là']);
+    else facts.push(['Lever', fmtTime(rts.rise)], ['Coucher', fmtTime(rts.set)]);
+    if (!rts.neverRises) facts.push(['Au plus haut', `${fmtTime(rts.transit.time)} · ${Math.round(rts.transit.altitude)}°`]);
+    const missing = obj.kind === 'planet' ? info.reason : 'Trop bas cette nuit (moins de 20°)';
+    facts.push(['Meilleur moment cette nuit', best ? `${fmtTime(best.time)} · ${Math.round(best.altitude)}° ${best.direction}` : missing]);
+    const now = Date.now();
+    if (now > from && now < to) {
+      const pos = Sky.objectPosition(obj, now, lat, lon);
+      facts.push(['Maintenant', pos.altitude > 0 ? `${Math.round(pos.altitude)}° ${Sky.direction(pos.azimuth)}` : 'sous l’horizon']);
+    }
+    $('dialogFacts').innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('');
+
+    const on = state.list.has(obj.id);
+    const star = $('dialogStar');
+    star.textContent = on ? '★ Retirer de ma liste' : '☆ Ajouter à ma liste';
+    star.setAttribute('aria-pressed', String(on));
+  }
+
+  function initObjects() {
+    document.addEventListener('click', (e) => {
+      const star = e.target.closest('[data-star]');
+      if (star) { toggleList(star.dataset.star); return; }
+      const open = e.target.closest('[data-object]');
+      if (open) openObject(open.dataset.object);
+    });
+    const dialog = $('objectDialog');
+    $('dialogClose').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    dialog.addEventListener('close', () => { state.dialogId = null; });
+    $('dialogStar').addEventListener('click', () => toggleList(state.dialogId));
+    $('listCsv').addEventListener('click', exportCsv);
+    $('listPrint').addEventListener('click', printList);
+    $('listClear').addEventListener('click', () => {
+      state.list.clear();
+      storage.set(LIST_KEY, []);
+      renderSky();
+    });
+  }
+
+  // ---------- Calendrier du ciel ----------
+  function renderCalendar() {
+    const { lat, lon } = state.place;
+    const days = state.calLong ? 365 : 90;
+    const key = `${lat},${lon},${days}`;
+    if (!state.calendar || state.calendar.key !== key) {
+      state.calendar = { key, events: Calendar.events(Date.now() - 43200000, days, lat, lon) };
+    }
+    $('calFilters').innerHTML = CAL_FILTERS.map(([id, label]) =>
+      `<button type="button" class="chip" data-cal="${id}" aria-pressed="${state.calFilter === id}">${label}</button>`).join('');
+    const events = state.calendar.events.filter((e) => state.calFilter === 'all' || e.kind === state.calFilter);
+    const month = (ms) => formatter({ month: 'long', year: 'numeric' }).format(ms);
+    let html = '';
+    let current = null;
+    for (const e of events) {
+      const m = month(e.time);
+      if (m !== current) {
+        if (current) html += '</ul>';
+        html += `<h3 class="month">${m}</h3><ul class="events">`;
+        current = m;
+      }
+      html += `<li class="event ev-${e.kind}">
+        <span class="ev-date"><small>${formatter({ weekday: 'short' }).format(e.time)}</small><strong>${formatter({ day: 'numeric' }).format(e.time)}</strong><small>${formatter({ month: 'short' }).format(e.time)}</small></span>
+        <span class="ev-icon" aria-hidden="true">${e.icon}</span>
+        <div><strong>${escapeHtml(e.title)}</strong><p class="small muted">${escapeHtml(e.detail)}</p></div>
+      </li>`;
+    }
+    if (current) html += '</ul>';
+    $('calendar').innerHTML = html || '<p class="small muted">Aucun événement de ce type sur la période.</p>';
+    $('calTitleRange').textContent = state.calLong ? '12 prochains mois' : '3 prochains mois';
+    $('calRange').textContent = state.calLong ? 'Voir 3 mois' : 'Voir 12 mois';
+  }
+
+  function initCalendar() {
+    $('calFilters').addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-cal]');
+      if (!chip) return;
+      state.calFilter = chip.dataset.cal;
+      renderCalendar();
+    });
+    $('calRange').addEventListener('click', () => {
+      state.calLong = !state.calLong;
+      renderCalendar();
+    });
   }
 
   function initSky() {
@@ -402,10 +683,12 @@
     renderNights();
     renderSky();
     renderTable();
+    renderCalendar();
     $('hero').hidden = false;
     $('nightsBlock').hidden = false;
     $('skyBlock').hidden = false;
     $('detailBlock').hidden = false;
+    $('calendarBlock').hidden = false;
     document.title = `${state.place.name} — Metastro, météo astro`;
   }
 
@@ -537,7 +820,7 @@
   function initNightMode() {
     const btn = $('nightMode');
     const apply = (on) => {
-      document.documentElement.classList.toggle('night', on);
+      document.documentElement.classList.toggle('night-vision', on);
       btn.setAttribute('aria-pressed', String(on));
       storage.set(NIGHT_KEY, on);
     };
@@ -593,6 +876,10 @@
     initLocate();
     initNights();
     initSky();
+    initObjects();
+    initCalendar();
+    const saved = storage.get(LIST_KEY);
+    if (Array.isArray(saved)) state.list = new Set(saved.filter((id) => Sky.findObject(id)));
     loadPlace(initialPlace());
   }
 

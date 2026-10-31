@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const Astro = require('../assets/js/astro.js');
 const Forecast = require('../assets/js/forecast.js');
 const Sky = require('../assets/js/sky.js');
+const Calendar = require('../assets/js/calendar.js');
 
 const PARIS = { lat: 48.8566, lon: 2.3522 };
 const minutes = (a, b) => Math.abs(a - b) / 60000;
@@ -151,4 +152,46 @@ test('cœur de la Voie lactée : été contre hiver', () => {
   assert.equal(winter.visible, false);
   assert.equal(winter.reason, 'Pas visible de nuit en cette saison');
   assert.equal(Sky.milkyWayForNight(Date.UTC(2024, 7, 3, 10), 70, 25).reason, 'Trop bas sous cette latitude');
+});
+
+test('calendrier : événements connus de l’hiver 2024-2025', () => {
+  const events = Calendar.events(Date.parse('2024-11-01T00:00Z'), 90, PARIS.lat, PARIS.lon);
+  const find = (title) => events.find((e) => e.title === title);
+  const near = (e, iso, days) => e && Math.abs(e.time - Date.parse(iso)) < days * 86400000;
+  assert.ok(near(find('Opposition de Jupiter'), '2024-12-07T12:00Z', 1.5));
+  assert.ok(near(find('Opposition de Mars'), '2025-01-16T02:00Z', 1.5));
+  assert.ok(near(find('Opposition d’Uranus'), '2024-11-17T00:00Z', 2));
+  assert.ok(near(find('Plus grande élongation est de Mercure'), '2024-11-16T00:00Z', 1.5));
+  assert.ok(near(find('Plus grande élongation ouest de Mercure'), '2024-12-25T00:00Z', 1.5));
+  assert.ok(near(find('Plus grande élongation est de Vénus'), '2025-01-10T00:00Z', 1.5));
+  assert.ok(near(find('Rapprochement Vénus – Saturne'), '2025-01-18T12:00Z', 1.5));
+  const saturn = events.filter((e) => e.title === 'La Lune près de Saturne');
+  assert.ok(saturn.some((e) => near(e, '2025-01-04T18:00Z', 0.5)), 'occultation de Saturne du 4 janvier 2025');
+  const geminids = find('Géminides');
+  assert.match(geminids.detail, /Lune très gênante/); // pleine lune le 15 décembre 2024
+  assert.match(find('Quadrantides').detail, /Lune discrète/); // nouvelle lune le 30 décembre 2024
+  assert.equal(events.filter((e) => e.title === 'Pleine lune').length, 3);
+  for (let i = 1; i < events.length; i++) assert.ok(events[i - 1].time <= events[i].time);
+});
+
+test('calendrier : éclipses et visibilité locale', () => {
+  const events = Calendar.events(Date.parse('2027-07-01T00:00Z'), 60, PARIS.lat, PARIS.lon);
+  const total = events.find((e) => e.title === 'Éclipse totale de Soleil');
+  assert.ok(total && new Date(total.time).toISOString().startsWith('2027-08-02'));
+  assert.ok(events.some((e) => e.kind === 'eclipses' && /Lune/.test(e.title)));
+  assert.ok(events.filter((e) => e.kind === 'eclipses' && /Lune/.test(e.title))
+    .every((e) => /Visible depuis votre lieu|Non visible depuis votre lieu/.test(e.detail)));
+});
+
+test('fiche d’objet : lever, passage et coucher', () => {
+  const jupiter = Sky.findObject('jupiter');
+  const r = Sky.riseTransitSet(jupiter, Date.UTC(2024, 11, 7, 11), PARIS.lat, PARIS.lon);
+  assert.ok(r.rise < r.transit.time && r.transit.time < r.set);
+  assert.ok(Math.abs(r.transit.time - Date.UTC(2024, 11, 7, 23, 40)) < 30 * 60000);
+  assert.ok(r.transit.altitude > 60 && r.transit.altitude < 66);
+  assert.equal(Sky.riseTransitSet(Sky.findObject('M81'), Date.UTC(2024, 11, 7, 11), PARIS.lat, PARIS.lon).circumpolar, true);
+  assert.equal(Sky.riseTransitSet(Sky.findObject('LMC'), Date.UTC(2024, 11, 7, 11), PARIS.lat, PARIS.lon).neverRises, true);
+  assert.equal(Sky.findObject('inconnu'), null);
+  const track = Sky.track(jupiter, Date.UTC(2024, 11, 7, 18), Date.UTC(2024, 11, 8, 6), PARIS.lat, PARIS.lon);
+  assert.equal(track.length, 73);
 });

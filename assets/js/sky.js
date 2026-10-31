@@ -165,6 +165,7 @@
       if (!wins.length) reason = ref.elongation < 15 ? 'Trop proche du Soleil' : 'Sous l’horizon pendant la nuit';
       return {
         ...planet,
+        kind: 'planet',
         magnitude: ref.magnitude,
         elongation: ref.elongation,
         windows: wins,
@@ -175,6 +176,35 @@
     });
   }
 
+  /** Note d'un objet du catalogue pour une nuit, ou null s'il ne monte pas à 20°. */
+  function rankObject(obj, night, lat, lon) {
+    const type = TYPES[obj.type];
+    const bright = Math.min(1, Math.max(0.35, (13 - obj.mag) / 9)) * type.appeal;
+    let best = null;
+    for (const h of night) {
+      const t = h.time + 1800000;
+      const pos = Astro.horizontalPosition(t, obj.ra, obj.dec, lat, lon);
+      if (pos.altitude < 20) continue;
+      const sky = 0.6 * h.darkness + (0.4 * (h.transparency - 1)) / 4;
+      const skyFactor = 1 - type.sensitivity * (1 - sky);
+      const clear = 1 - (typeof h.cloud === 'number' ? h.cloud : 50) / 100;
+      const value = Math.sin(pos.altitude * rad) * skyFactor * (0.3 + 0.7 * clear) * bright;
+      if (!best || value > best.value) best = { value, time: t, altitude: pos.altitude, azimuth: pos.azimuth, skyFactor };
+    }
+    if (!best) return null;
+    return {
+      ...obj,
+      kind: 'deep',
+      typeLabel: type.label,
+      group: type.group,
+      score: Math.round(best.value * 100),
+      time: best.time,
+      altitude: best.altitude,
+      direction: direction(best.azimuth),
+      demanding: type.sensitivity >= 0.55 && best.skyFactor < 0.6,
+    };
+  }
+
   /**
    * Classement des objets du ciel profond pour une nuit : hauteur, éclat,
    * nuages et qualité du ciel (obscurité, transparence) selon le type d'objet.
@@ -182,34 +212,51 @@
   function deepSkyForNight(hours, lat, lon) {
     const night = hours.filter((h) => h.sunAlt < -12);
     if (!night.length) return [];
-    return CATALOG.map((obj) => {
-      const type = TYPES[obj.type];
-      const bright = Math.min(1, Math.max(0.35, (13 - obj.mag) / 9)) * type.appeal;
-      let best = null;
-      for (const h of night) {
-        const t = h.time + 1800000;
-        const pos = Astro.horizontalPosition(t, obj.ra, obj.dec, lat, lon);
-        if (pos.altitude < 20) continue;
-        const sky = 0.6 * h.darkness + (0.4 * (h.transparency - 1)) / 4;
-        const skyFactor = 1 - type.sensitivity * (1 - sky);
-        const clear = 1 - (typeof h.cloud === 'number' ? h.cloud : 50) / 100;
-        const value = Math.sin(pos.altitude * rad) * skyFactor * (0.3 + 0.7 * clear) * bright;
-        if (!best || value > best.value) best = { value, time: t, altitude: pos.altitude, azimuth: pos.azimuth, skyFactor };
-      }
-      if (!best) return null;
-      return {
-        ...obj,
-        typeLabel: type.label,
-        group: type.group,
-        score: Math.round(best.value * 100),
-        time: best.time,
-        altitude: best.altitude,
-        direction: direction(best.azimuth),
-        demanding: type.sensitivity >= 0.55 && best.skyFactor < 0.6,
-      };
-    })
+    return CATALOG.map((obj) => rankObject(obj, night, lat, lon))
       .filter(Boolean)
       .sort((a, b) => b.score - a.score);
+  }
+
+  /** Planète ou objet du catalogue désigné par son identifiant. */
+  function findObject(id) {
+    const planet = PLANETS.find((p) => p.id === id);
+    if (planet) return { ...planet, kind: 'planet', typeLabel: 'Planète' };
+    const obj = CATALOG.find((o) => o.id === id);
+    return obj ? { ...obj, kind: 'deep', typeLabel: TYPES[obj.type].label, group: TYPES[obj.type].group } : null;
+  }
+
+  /** Hauteur et azimut (degrés) d'un objet trouvé par findObject. */
+  function objectPosition(obj, t, lat, lon) {
+    return obj.kind === 'planet'
+      ? Astro.planetPosition(t, obj.id, lat, lon)
+      : Astro.horizontalPosition(t, obj.ra, obj.dec, lat, lon);
+  }
+
+  /** Courbe de hauteur d'un objet entre `from` et `to`. */
+  function track(obj, from, to, lat, lon, step = STEP) {
+    const out = [];
+    for (let t = from; t <= to; t += step) out.push({ time: t, altitude: objectPosition(obj, t, lat, lon).altitude });
+    return out;
+  }
+
+  /** Lever, passage au plus haut et coucher d'un objet sur 24 h à partir de `start`. */
+  function riseTransitSet(obj, start, lat, lon) {
+    const alt = (t) => objectPosition(obj, t, lat, lon).altitude;
+    const crossings = Astro.findCrossings(alt, 0, start, start + 86400000, STEP);
+    let transit = null;
+    for (let t = start; t <= start + 86400000; t += STEP) {
+      const a = alt(t);
+      if (!transit || a > transit.altitude) transit = { time: t, altitude: a };
+    }
+    const rise = crossings.find((c) => c.rising);
+    const set = crossings.find((c) => !c.rising);
+    return {
+      rise: rise ? rise.time : null,
+      set: set ? set.time : null,
+      transit,
+      circumpolar: !crossings.length && alt(start) > 0,
+      neverRises: !crossings.length && alt(start) <= 0,
+    };
   }
 
   /** Fenêtres où le cœur de la Voie lactée dépasse 10° en pleine nuit astronomique. */
@@ -234,7 +281,19 @@
     return { windows: wins, maxAlt, moonFreeMinutes: moonFree, visible: wins.length > 0, reason };
   }
 
-  const api = { CATALOG, TYPES, PLANETS, planetsForNight, deepSkyForNight, milkyWayForNight, direction };
+  const api = {
+    CATALOG,
+    TYPES,
+    PLANETS,
+    planetsForNight,
+    deepSkyForNight,
+    milkyWayForNight,
+    direction,
+    findObject,
+    objectPosition,
+    track,
+    riseTransitSet,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MetastroSky = api;

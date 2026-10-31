@@ -1,5 +1,19 @@
 # Notes de version
 
+## v1.2.0
+
+- **Calendrier du ciel.** Les événements des 3 ou 12 prochains mois, avec des filtres par type :
+  - étoiles filantes, avec la gêne de la Lune et la hauteur du radiant depuis votre lieu ;
+  - éclipses, avec la visibilité locale des éclipses de Lune ;
+  - nouvelles et pleines lunes ;
+  - oppositions, plus grandes élongations de Mercure et Vénus ;
+  - rapprochements entre planètes et avec la Lune.
+
+  Les événements planétaires et lunaires sont calculés dans le navigateur.
+- **Fiche d'un objet.** Un clic sur une planète ou un objet du ciel profond ouvre sa courbe de hauteur pendant la nuit, avec la Lune, les crépuscules et le meilleur moment. La fiche donne aussi le lever, le passage au plus haut, le coucher et la position actuelle.
+- **Liste d'observation.** L'étoile ☆ ajoute un objet à votre liste, triée par heure de passage pour la nuit choisie. La liste se garde d'une visite à l'autre, s'imprime et s'exporte en CSV (compatible Excel).
+- **Correction.** Le mode vision nocturne déformait la mise en page : toute la page héritait du style des cartes de nuit (texte centré, bordure). C'est corrigé.
+
 ## v1.1.1
 
 - L'archive `metastro-v1.1.1.zip` de la release contient désormais tout le code du dépôt : site, tests, `package.json`, notes de version et workflows. Pour héberger le site, il suffit d'y prendre `index.html` et le dossier `assets/`.

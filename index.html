@@ -111,6 +111,17 @@
         <ol class="objects" id="deepSky"></ol>
         <button id="deepMore" class="btn" type="button" hidden></button>
       </article>
+      <article class="card list-card">
+        <div class="deep-head">
+          <h3>Ma liste d'observation <span id="listCount" class="muted"></span></h3>
+          <div class="chips">
+            <button id="listPrint" class="btn" type="button" disabled>Imprimer</button>
+            <button id="listCsv" class="btn" type="button" disabled>Exporter CSV</button>
+            <button id="listClear" class="btn" type="button" disabled>Vider</button>
+          </div>
+        </div>
+        <div id="obsList"></div>
+      </article>
     </section>
 
     <section class="block" id="detailBlock" hidden>
@@ -131,6 +142,17 @@
         <li><span class="sw lvl-2"></span>Médiocre</li>
         <li><span class="sw lvl-1"></span>Mauvais</li>
       </ul>
+    </section>
+
+    <section class="block" id="calendarBlock" hidden>
+      <div class="block-head">
+        <h2>Calendrier du ciel <span class="muted small" id="calTitleRange"></span></h2>
+        <button id="calRange" class="btn" type="button"></button>
+      </div>
+      <div class="card">
+        <div class="chips" id="calFilters" role="group" aria-label="Filtrer les événements"></div>
+        <div id="calendar"></div>
+      </div>
     </section>
 
     <section class="block guide" id="guide">
@@ -167,6 +189,10 @@
           <p>Planètes, objets du ciel profond et Voie lactée sont classés pour la nuit choisie. Les galaxies et nébuleuses souffrent le plus de la Lune et d'un ciel voilé ; les amas et étoiles doubles s'en accommodent.</p>
         </article>
         <article class="card">
+          <h3>Fiche et liste</h3>
+          <p>Cliquez sur une planète ou un objet pour voir sa hauteur heure par heure. L'étoile ☆ l'ajoute à votre liste d'observation, triée par heure de passage, à imprimer ou exporter en CSV.</p>
+        </article>
+        <article class="card">
           <h3>Rosée</h3>
           <p>Quand l'écart entre température et point de rosée passe sous 2 °C, la buée menace les optiques : prévoyez une résistance chauffante.</p>
         </article>
@@ -179,9 +205,28 @@
     <p class="muted">Seeing et transparence sont des estimations : comparez toujours avec le ciel réel.</p>
   </footer>
 
+  <dialog id="objectDialog" class="dialog" aria-labelledby="dialogTitle">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow" id="dialogType"></p>
+        <h2 id="dialogTitle"></h2>
+        <p class="small muted" id="dialogMeta"></p>
+      </div>
+      <button id="dialogClose" class="btn" type="button" aria-label="Fermer">✕</button>
+    </div>
+    <div id="dialogChart" class="chart"></div>
+    <dl class="facts" id="dialogFacts"></dl>
+    <div class="dialog-foot">
+      <button id="dialogStar" class="btn" type="button" aria-pressed="false"></button>
+    </div>
+  </dialog>
+
+  <section id="printList" class="print-only" aria-hidden="true"></section>
+
   <script src="assets/js/astro.js"></script>
   <script src="assets/js/forecast.js"></script>
   <script src="assets/js/sky.js"></script>
+  <script src="assets/js/calendar.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
