@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag existant à publier (ex. v1.0.0)'
+        description: 'Tag à publier (ex. v1.0.0) ; créé sur le commit lancé s’il n’existe pas'
         required: true
         type: string
 permissions:
@@ -24,7 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
           persist-credentials: false
       - name: Vérifier la version et extraire les notes
         shell: bash
@@ -64,7 +63,18 @@ jobs:
             echo "La release existe déjà ; aucun remplacement."
             exit 0
           fi
-          gh release create "$RELEASE_TAG" --verify-tag \
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            tagged=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "Le tag $RELEASE_TAG pointe sur $tagged, pas sur $GITHUB_SHA."
+              exit 1
+            fi
+            target=(--verify-tag)
+          else
+            # Lancement manuel : le tag est créé sur le commit construit.
+            target=(--target "$GITHUB_SHA")
+          fi
+          gh release create "$RELEASE_TAG" "${target[@]}" \
             --title "Metastro $RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             "$RUNNER_TEMP/metastro-$RELEASE_TAG.zip" \

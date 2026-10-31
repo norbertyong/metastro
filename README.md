@@ -51,6 +51,8 @@ git tag -a v1.0.0 -m "Metastro v1.0.0"
 git push origin v1.0.0
 ```
 
+On peut aussi lancer le workflow à la main (onglet **Actions**, *Run workflow*) en indiquant le tag. S'il n'existe pas encore, il est créé sur le commit de la branche choisie.
+
 ## Publier avec GitHub Pages
 
 Dans **Settings → Pages**, choisissez **Deploy from a branch**, puis la branche `main` et le dossier `/ (root)`. Le site est entièrement statique.
